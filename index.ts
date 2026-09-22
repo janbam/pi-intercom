@@ -536,15 +536,22 @@ function formatSessionListRow(session: SessionInfo, currentCwd: string, isSelf: 
   const pane = session.tmuxPane ? ` · tmux ${session.tmuxPane}` : "";
   return `• ${name} (${idPrefix}) — ${session.cwd} (${session.model}${formatContextUsage(session)}${pane})${suffix}`;
 }
-function previewText(value: unknown, maxLength = 72): string | undefined {
-  if (typeof value !== "string") {
+/**
+ * Lines of a tool call's `message` argument for the call row, or undefined when there is no message.
+ * Collapsed: one whitespace-normalized line capped at 96 chars with a trailing `…`.
+ * Expanded: the full message with its original line breaks.
+ */
+function callMessageLines(value: unknown, expanded: boolean): string[] | undefined {
+  if (typeof value !== "string" || !value.trim()) {
     return undefined;
+  }
+  // Expanded view hides nothing: keep the message verbatim, line structure included.
+  // Normalize CR first; a raw \r would return the terminal cursor and blank the line.
+  if (expanded) {
+    return value.trim().replace(/\r\n?/g, "\n").split("\n");
   }
   const normalized = value.replace(/\s+/g, " ").trim();
-  if (!normalized) {
-    return undefined;
-  }
-  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+  return [normalized.length > 96 ? `${normalized.slice(0, 95)}…` : normalized];
 }
 function firstTextContent(result: { content?: Array<{ type: string; text?: string }> }): string {
   return result.content?.find((item) => item.type === "text" && typeof item.text === "string")?.text?.replace(/\*\*/g, "") ?? "";
@@ -2049,17 +2056,18 @@ export default function piIntercomExtension(pi: ExtensionAPI) {
           };
         }
       },
-      renderCall(args, theme) {
+      renderCall(args, theme, context) {
         const reason = typeof args.reason === "string" ? args.reason : "contact";
-        const messagePreview = previewText(args.message, 96);
+        const messageLines = callMessageLines(args.message, context.expanded);
         const interview = args.interview && typeof args.interview === "object" ? args.interview as { title?: unknown } : undefined;
         let text = theme.fg("toolTitle", theme.bold("contact_supervisor "));
         text += theme.fg(reason === "need_decision" ? "warning" : reason === "progress_update" ? "muted" : "accent", reason);
         if (typeof interview?.title === "string" && interview.title.trim()) {
           text += " " + theme.fg("accent", interview.title.trim());
         }
-        if (messagePreview) {
-          text += "\n  " + theme.fg("dim", messagePreview);
+        // Style per line so every indented message line stays dimmed on its own.
+        for (const line of messageLines ?? []) {
+          text += "\n  " + theme.fg("dim", line);
         }
         return new Text(text, 0, 0);
       },
@@ -2611,10 +2619,10 @@ Usage:
           };
       }
     },
-    renderCall(args, theme) {
+    renderCall(args, theme, context) {
       const action = typeof args.action === "string" ? args.action : "intercom";
       const target = typeof args.to === "string" && args.to.trim() ? args.to.trim() : undefined;
-      const messagePreview = previewText(args.message, 96);
+      const messageLines = callMessageLines(args.message, context.expanded);
       const attachmentCount = Array.isArray(args.attachments) ? args.attachments.length : 0;
       let text = theme.fg("toolTitle", theme.bold("intercom "));
       text += theme.fg(action === "ask" ? "warning" : action === "reply" ? "success" : "accent", action);
@@ -2624,8 +2632,9 @@ Usage:
       if (attachmentCount > 0) {
         text += " " + theme.fg("dim", `(${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"})`);
       }
-      if (messagePreview) {
-        text += "\n  " + theme.fg("dim", messagePreview);
+      // Style per line so every indented message line stays dimmed on its own.
+      for (const line of messageLines ?? []) {
+        text += "\n  " + theme.fg("dim", line);
       }
       return new Text(text, 0, 0);
     },

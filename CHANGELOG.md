@@ -4,6 +4,9 @@ All notable changes to the `pi-intercom` extension will be documented in this fi
 
 ## [Unreleased]
 
+### Changed
+- Expanding an `intercom` or `contact_supervisor` tool call (Ctrl+O) now shows the full outgoing message with its line breaks instead of the truncated one-line preview.
+
 ## [0.13.0] - 2026-09-02
 
 ### Highlights
