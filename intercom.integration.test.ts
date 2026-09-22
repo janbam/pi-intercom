@@ -1753,6 +1753,19 @@ test("intercom tool renders compact call and result rows", async () => {
     attachments: [{ type: "snippet", name: "note.ts", content: "const ok = true;" }],
   }, renderTheme, {})), /intercom ask → planner \(1 attachment\)\n {2}Need a decision/);
 
+  // A long multi-line message must be clipped when collapsed but shown in full, line breaks intact, when expanded.
+  const longMessage = `First line ${"x".repeat(120)} END_OF_FIRST\nSecond line stays visible`;
+  const collapsedCall = renderToText(intercomTool.renderCall({ action: "send", to: "planner", message: longMessage }, renderTheme, { expanded: false }));
+  assert.match(collapsedCall, /…/);
+  assert.doesNotMatch(collapsedCall, /END_OF_FIRST|Second line/);
+  const expandedCall = renderToText(intercomTool.renderCall({ action: "send", to: "planner", message: longMessage }, renderTheme, { expanded: true }));
+  assert.doesNotMatch(expandedCall, /…/);
+  assert.match(expandedCall.replace(/\s+/g, ""), /x{120}END_OF_FIRST/);
+  assert.match(expandedCall, /\n {2}Second line stays visible$/);
+  // CRLF must not leak a raw \r (it would return the cursor and blank the line). Check raw lines: renderToText's trimEnd would hide it.
+  const crlfLines = intercomTool.renderCall({ action: "send", to: "planner", message: "one\r\ntwo" }, renderTheme, { expanded: true }).render(120);
+  assert.ok(crlfLines.every((line) => !line.includes("\r")));
+
   const resultText = renderToText(intercomTool.renderResult({
     content: [{ type: "text", text: "Message sent to planner" }],
     details: { delivered: true, messageId: "abcdef123456" },
@@ -1875,6 +1888,10 @@ test("contact supervisor tool renders reason and reply state", async () => {
       message: "Please answer these before I continue.",
       interview: { title: "API migration", questions: [] },
     }, renderTheme, {})), /contact_supervisor interview_request API migration\n {2}Please answer/);
+    assert.match(renderToText(supervisorTool.renderCall({
+      reason: "need_decision",
+      message: "Which API?\nOption B details",
+    }, renderTheme, { expanded: true })), /Which API\?\n {2}Option B details/);
 
     const warningText = renderToText(supervisorTool.renderResult({
       content: [{ type: "text", text: "Reply from supervisor:\nUse stable API" }],
